@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel Executivo — Reclame Aqui | Enjoei</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Firebase (armazena os dados agregados para todo mundo ver, sem precisar re-upload) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --bg:#2E002B;
+    --bg-panel:#440041;
+    --paper:#F7F4EC;
+    --ink:#2A0027;
+    --ink-soft:#6B3B68;
+    --coral:#FA4C04;
+    --coral-soft:#FFD9CC;
+    --teal:#08B25C;
+    --gold:#F1BF04;
+    --lilas:#CDBBFD;
+    --muted:#CDBBFD;
+    --line:rgba(205,187,253,0.16);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 15% 0%, #5C0057 0%, transparent 45%),
+      var(--bg);
+    color:var(--paper);
+    font-family:'Inter',sans-serif;
+    padding:0 0 60px 0;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:0 28px;}
+
+  /* Masthead */
+  .masthead{padding:44px 0 30px 0; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:flex-start; gap:20px; flex-wrap:wrap;}
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--coral); display:flex; align-items:center; gap:10px;
+  }
+  .eyebrow::before{content:'●'; font-size:8px;}
+  h1{
+    font-family:'Fraunces',serif; font-weight:600; font-size:clamp(28px,4vw,44px);
+    margin-top:10px; color:var(--paper); letter-spacing:-0.01em;
+  }
+  .sub{color:var(--muted); font-size:15px; margin-top:8px; max-width:640px; line-height:1.5;}
+  .meta-row{display:flex; gap:10px; margin-top:22px; flex-wrap:wrap;}
+  .tag{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--paper);
+    border:1px solid var(--line); padding:7px 12px; border-radius:3px; background:var(--bg-panel);
+  }
+  .tag b{color:var(--coral);}
+
+  .btn-admin{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink);
+    background:var(--gold); border:none; padding:10px 16px; border-radius:4px; cursor:pointer;
+    white-space:nowrap; font-weight:600; letter-spacing:.03em;
+  }
+  .btn-admin:hover{filter:brightness(1.08);}
+
+  /* KPI ledger strip */
+  .kpi-grid{
+    display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:34px 0;
+  }
+  .kpi{
+    background:var(--paper); color:var(--ink); border-radius:6px; padding:20px 18px 16px 18px;
+    position:relative; overflow:hidden; border-top:3px solid var(--coral);
+  }
+  .kpi.teal{border-top-color:var(--teal);}
+  .kpi.gold{border-top-color:var(--gold);}
+  .kpi-label{
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--ink-soft);
+  }
+  .kpi-value{
+    font-family:'Fraunces',serif; font-weight:700; font-size:36px; margin-top:6px; line-height:1;
+  }
+  .kpi-delta{font-family:'IBM Plex Mono',monospace; font-size:12px; margin-top:8px; display:flex; gap:6px; align-items:center;}
+  .delta-up{color:#0A8A47;} .delta-down{color:#D63C00;} .delta-flat{color:var(--ink-soft);}
+  .kpi-note{font-size:11px; color:var(--ink-soft); margin-top:6px;}
+
+  /* Panels */
+  .panel{
+    background:var(--bg-panel); border:1px solid var(--line); border-radius:8px;
+    padding:24px; margin-bottom:18px;
+  }
+  .panel-head{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:16px; flex-wrap:wrap; gap:8px;}
+  .panel-title{font-family:'Fraunces',serif; font-size:19px; font-weight:600;}
+  .panel-tag{font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--muted); letter-spacing:.06em;}
+  .two-col{display:grid; grid-template-columns:1.3fr 1fr; gap:18px;}
+  .chart-box{height:260px; position:relative;}
+
+  /* Rank list */
+  .rank-list{display:flex; flex-direction:column; gap:10px;}
+  .rank-item{display:grid; grid-template-columns:28px 1fr 52px; gap:12px; align-items:center;}
+  .rank-num{font-family:'IBM Plex Mono',monospace; color:var(--coral); font-size:13px;}
+  .rank-bar-track{background:rgba(255,255,255,0.08); border-radius:3px; height:8px; overflow:hidden;}
+  .rank-bar-fill{background:linear-gradient(90deg,var(--coral),var(--gold)); height:100%; border-radius:3px;}
+  .rank-label{font-size:12.5px; color:var(--paper); line-height:1.3; margin-top:4px;}
+  .rank-pct{font-family:'IBM Plex Mono',monospace; font-size:12.5px; text-align:right; color:var(--muted);}
+
+  /* Theme cards */
+  .theme-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:14px;}
+  .theme-card{background:rgba(255,255,255,0.03); border:1px solid var(--line); border-radius:6px; padding:16px 18px;}
+  .theme-card .stamp{
+    font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--gold); letter-spacing:.06em; text-transform:uppercase;
+  }
+  .theme-card h3{font-family:'Fraunces',serif; font-size:15.5px; font-weight:600; margin:6px 0 8px 0; color:var(--paper);}
+  .theme-card p{font-size:12.8px; line-height:1.55; color:var(--muted);}
+  .empty-note{font-size:12.5px; color:var(--muted); font-style:italic;}
+
+  /* Notes footer */
+  .notes{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--muted); line-height:1.7;
+    border-left:2px solid var(--coral); padding-left:16px; margin-top:6px;
+  }
+  .notes b{color:var(--gold);}
+
+  /* Loading / status banner */
+  #statusBanner{
+    font-family:'IBM Plex Mono',monospace; font-size:12px; padding:10px 16px; border-radius:4px;
+    margin:20px 0; display:none;
+  }
+  #statusBanner.show{display:block;}
+  #statusBanner.info{background:rgba(205,187,253,0.15); color:var(--lilas); border:1px solid var(--line);}
+  #statusBanner.error{background:rgba(214,60,0,0.15); color:#FF8A5C; border:1px solid #D63C00;}
+
+  /* Modal */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none;
+    align-items:flex-start; justify-content:center; padding:40px 16px; overflow-y:auto; z-index:100;
+  }
+  .modal-overlay.open{display:flex;}
+  .modal{
+    background:var(--paper); color:var(--ink); border-radius:10px; padding:28px; max-width:560px; width:100%;
+    position:relative;
+  }
+  .modal h2{font-family:'Fraunces',serif; font-size:22px; margin-bottom:6px;}
+  .modal .modal-sub{font-size:12.5px; color:var(--ink-soft); margin-bottom:20px; line-height:1.5;}
+  .modal label{font-size:12px; font-weight:600; display:block; margin:14px 0 5px 0;}
+  .modal input[type="text"], .modal input[type="number"], .modal input[type="password"], .modal textarea{
+    width:100%; padding:9px 10px; border:1px solid #D8D2C6; border-radius:4px; font-family:'Inter',sans-serif; font-size:13px;
+  }
+  .modal textarea{resize:vertical; min-height:50px;}
+  .modal input[type="file"]{width:100%; font-size:12.5px; margin-top:4px;}
+  .modal-section{border-top:1px dashed #D8D2C6; padding-top:14px; margin-top:18px;}
+  .modal-section-title{font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--coral); font-weight:700;}
+  .field-row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .modal-actions{display:flex; gap:10px; margin-top:22px;}
+  .btn-primary{background:var(--coral); color:#fff; border:none; padding:11px 18px; border-radius:5px; font-weight:600; font-size:13px; cursor:pointer;}
+  .btn-secondary{background:transparent; color:var(--ink-soft); border:1px solid #D8D2C6; padding:11px 18px; border-radius:5px; font-size:13px; cursor:pointer;}
+  .msg{font-size:12px; margin-top:10px; padding:8px 10px; border-radius:4px; display:none;}
+  .msg.show{display:block;}
+  .msg.ok{background:#E3F6EA; color:#0A6B3C;}
+  .msg.err{background:#FBE4DF; color:#B33418;}
+  .close-x{position:absolute; top:16px; right:20px; background:none; border:none; font-size:20px; cursor:pointer; color:var(--ink-soft);}
+
+  @media(max-width:860px){
+    .kpi-grid{grid-template-columns:repeat(2,1fr);}
+    .two-col{grid-template-columns:1fr;}
+    .theme-grid{grid-template-columns:1fr;}
+    .field-row{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div>
+      <div class="eyebrow">Governança de Atendimento · Reclame Aqui</div>
+      <h1>Painel Executivo — Reclame Aqui</h1>
+      <p class="sub">Reputação RA, volume de reclamações e o que os usuários têm reportado, por dor e por tema.</p>
+      <div class="meta-row" id="metaRow">
+        <div class="tag">Carregando dados…</div>
+      </div>
+    </div>
+    <button class="btn-admin" onclick="openModal()">⚙ Atualizar dados do mês</button>
+  </div>
+
+  <div id="statusBanner"></div>
+
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-label">Nota Final RA</div>
+      <div class="kpi-value" id="kpiNota">—</div>
+      <div class="kpi-delta delta-flat" id="kpiNotaDelta"></div>
+      <div class="kpi-note" id="kpiNotaNote"></div>
+    </div>
+    <div class="kpi teal">
+      <div class="kpi-label">Reclamações no mês</div>
+      <div class="kpi-value" id="kpiReclamacoes">—</div>
+      <div class="kpi-delta delta-flat" id="kpiReclamacoesDelta"></div>
+      <div class="kpi-note" id="kpiReclamacoesNote"></div>
+    </div>
+    <div class="kpi gold">
+      <div class="kpi-label">% Resolvidas</div>
+      <div class="kpi-value" id="kpiResolvidas">—</div>
+      <div class="kpi-delta delta-flat" id="kpiResolvidasDelta"></div>
+      <div class="kpi-note" id="kpiResolvidasNote"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">% Voltaria a fazer negócio</div>
+      <div class="kpi-value" id="kpiVoltaria">—</div>
+      <div class="kpi-delta delta-flat" id="kpiVoltariaDelta"></div>
+      <div class="kpi-note" id="kpiVoltariaNote"></div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">Nota Final RA — evolução</div>
+        <div class="panel-tag" id="tagNota">—</div>
+      </div>
+      <div class="chart-box"><canvas id="chartNota"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">Reclamações x Avaliadas</div>
+        <div class="panel-tag" id="tagVolume">—</div>
+      </div>
+      <div class="chart-box"><canvas id="chartVolume"></canvas></div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">Distribuição por categoria-mãe</div>
+        <div class="panel-tag" id="tagMacro">—</div>
+      </div>
+      <div class="chart-box"><canvas id="chartMacro"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">Top dores detalhadas</div>
+        <div class="panel-tag" id="tagDores">—</div>
+      </div>
+      <div class="rank-list" id="rankList"><div class="empty-note">Sem dados ainda.</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">O que os usuários estão trazendo</div>
+      <div class="panel-tag" id="tagTemas">POR DOR</div>
+    </div>
+    <div class="theme-grid" id="themeGrid">
+      <div class="empty-note">Nenhuma leitura qualitativa cadastrada ainda para o mês mais recente.</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">Notas de leitura dos dados</div>
+      <div class="panel-tag">TRANSPARÊNCIA METODOLÓGICA</div>
+    </div>
+    <div class="notes" id="notesBox">
+      Carregando notas…
+    </div>
+  </div>
+
+</div>
+
+<!-- MODAL DE ATUALIZAÇÃO -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <button class="close-x" onclick="closeModal()">✕</button>
+    <h2>Atualizar dados do mês</h2>
+    <p class="modal-sub">Suba a planilha completa do Reclame Aqui (.xlsx) — com as abas "índices-por-mês", "em quantidade" e "base". O painel lê as 3 abas sozinho, agrupa por mês e recalcula tudo automaticamente. Isso é salvo para todo mundo que acessar o painel — não precisa fazer de novo.</p>
+
+    <label>Senha de atualização</label>
+    <input type="password" id="senhaInput" placeholder="Peça a senha a quem gerou este painel">
+
+    <div class="modal-section">
+      <div class="modal-section-title">Planilha do Reclame Aqui (.xlsx)</div>
+      <label>Arquivo</label>
+      <input type="file" id="fileInput" accept=".xlsx,.xls">
+      <p style="font-size:11.5px;color:#6B3B68;margin-top:6px;">Precisa ter as abas "índices-por-mês", "em quantidade" e "base" (com as colunas de sempre, incluindo "Data Reclamação" e "Dores enjoei - Novas").</p>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Leitura qualitativa (opcional)</div>
+      <p style="font-size:11.5px;color:#6B3B68;margin:4px 0 8px 0;">Isso não dá pra tirar automaticamente do arquivo — se quiser, escreva aqui um resumo do que os usuários estão reportando no mês mais recente da base enviada.</p>
+      <div id="temasContainer"></div>
+    </div>
+
+    <div class="msg" id="modalMsg"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="handleUpload()" id="btnSalvar">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   CONFIGURAÇÃO — preencha com os dados do seu projeto Firebase
+   (veja o passo a passo que te mandei para criar isso gratuitamente)
+   ========================================================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyBaSWP04sv9urWaIG4N6HNfnvxfB_b9Qes",
+  authDomain: "painel-ra-enjoei.firebaseapp.com",
+  projectId: "painel-ra-enjoei",
+  storageBucket: "painel-ra-enjoei.firebasestorage.app",
+  messagingSenderId: "1053775387300",
+  appId: "1:1053775387300:web:bc1eca5a12cc5ad4b5e431"
+};
+// Senha simples para liberar o botão "Salvar" no modal.
+// Isso NÃO é segurança real — é só uma trava contra cliques acidentais.
+// A proteção de verdade fica nas regras do Firestore (veja o passo a passo).
+const ADMIN_PASSPHRASE = "enjoei2026";
+
+// Quantos meses aparecem nos gráficos de comparativo (Nota RA e Volumetria).
+// O histórico completo continua salvo no banco — isso só limita a JANELA exibida.
+const JANELA_MESES = 6;
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const COLLECTION = "reclameaqui_meses";
+
+/* ========================= UTIL ========================= */
+const MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+function mesKeyToLabel(mesKey){ // "2026-07" -> "Jul/26"
+  const [y,m] = mesKey.split('-');
+  return `${MESES_ABREV[parseInt(m,10)-1]}/${y.slice(2)}`;
+}
+function fmtNum(n){ return n === null || n === undefined ? '—' : n.toLocaleString('pt-BR'); }
+function fmtPct(n){ return n === null || n === undefined ? '—' : n.toFixed(1).replace('.',',') + '%'; }
+function fmtNota(n){ return n === null || n === undefined ? '—' : n.toFixed(2).replace('.',','); }
+
+function showBanner(text, type){
+  const el = document.getElementById('statusBanner');
+  el.textContent = text;
+  el.className = 'show ' + type;
+}
+function hideBanner(){ document.getElementById('statusBanner').className = ''; }
+
+/* ===================== MODAL CONTROL ===================== */
+function openModal(){
+  document.getElementById('modalOverlay').classList.add('open');
+  buildTemasFields();
+}
+function closeModal(){
+  document.getElementById('modalOverlay').classList.remove('open');
+  document.getElementById('modalMsg').className = 'msg';
+}
+function buildTemasFields(){
+  const c = document.getElementById('temasContainer');
+  c.innerHTML = '';
+  for(let i=1;i<=6;i++){
+    c.innerHTML += `
+      <label>Tema ${i} — título</label>
+      <input type="text" id="temaTitulo${i}" placeholder="Ex: Produto extraviado, perdido ou roubado">
+      <label>Tema ${i} — descrição</label>
+      <textarea id="temaTexto${i}" placeholder="Resumo do que os usuários estão relatando (sem dados pessoais)"></textarea>
+    `;
+  }
+}
+
+/* ================= PARSE + AGREGAÇÃO DA PLANILHA (3 abas) ================= */
+const MESES_ABREV_MAP = {jan:1,fev:2,mar:3,abr:4,mai:5,jun:6,jul:7,ago:8,set:9,out:10,nov:11,dez:12};
+const MESES_COMPLETOS = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+
+function parseDateToMesKey(value){
+  let d;
+  if(value instanceof Date){ d = value; }
+  else if(typeof value === 'number'){ d = new Date(Date.UTC(1899,11,30) + value*86400*1000); }
+  else if(typeof value === 'string'){
+    const parts = value.split(/[\/\-]/);
+    if(parts.length===3){
+      if(parts[2].length===4){ d = new Date(parts[2], parts[1]-1, parts[0]); }
+      else { d = new Date(value); }
+    } else { d = new Date(value); }
+  }
+  if(!d || isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  return `${y}-${m}`;
+}
+
+function limpaDor(raw){
+  if(!raw || String(raw).trim()==='') return {macro:'Não categorizado', detalhe:'Não categorizado'};
+  const semInativo = String(raw).replace('[INATIVO]','').trim().replace(/\s+/g,' ');
+  const idx = semInativo.indexOf(' - ');
+  const macro = idx>-1 ? semInativo.slice(0,idx).trim() : semInativo;
+  return {macro, detalhe: semInativo};
+}
+
+// aba "base": só categorização (macro/dor), agrupada por mês
+function agregarBase(rows){
+  const meses = {};
+  rows.forEach(row=>{
+    const mesKey = parseDateToMesKey(row['Data Reclamação']);
+    if(!mesKey) return;
+    if(!meses[mesKey]) meses[mesKey] = {macro:{}, dores:{}};
+    const agg = meses[mesKey];
+    const {macro, detalhe} = limpaDor(row['Dores enjoei - Novas']);
+    agg.macro[macro] = (agg.macro[macro]||0) + 1;
+    agg.dores[detalhe] = (agg.dores[detalhe]||0) + 1;
+  });
+  return meses;
+}
+
+function sheetToMatrix(ws){
+  return XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true});
+}
+
+// aba "em quantidade": números mensais realizados, já prontos
+function agregarEmQuantidade(ws){
+  const rows = sheetToMatrix(ws);
+  const headerIdx = rows.findIndex(r=>r.some(c=>typeof c==='string' && c.toLowerCase().includes('reclama')));
+  if(headerIdx<0) return {list:[], meses:{}};
+  const header = rows[headerIdx];
+  const reclamCol = header.findIndex(c=>typeof c==='string' && c.toLowerCase().includes('reclama'));
+  const mesCol = reclamCol-1;
+  const list = [];
+  const meses = {};
+  for(let r=headerIdx+1; r<rows.length; r++){
+    const row = rows[r];
+    if(!row || row[mesCol]===null || row[mesCol]===undefined || String(row[mesCol]).trim()==='') continue;
+    let mm, ano;
+    if(row[mesCol] instanceof Date){
+      mm = row[mesCol].getUTCMonth()+1;
+      ano = row[mesCol].getUTCFullYear();
+    } else {
+      const mesStr = String(row[mesCol]).trim();
+      const partes = mesStr.split('/');
+      if(partes.length!==2) continue;
+      const abrev = partes[0].trim().toLowerCase().slice(0,3);
+      mm = MESES_ABREV_MAP[abrev];
+      ano = parseInt(partes[1].trim(),10);
+    }
+    if(!mm || !ano) continue;
+    const key = `${ano}-${String(mm).padStart(2,'0')}`;
+    const agg = {
+      totalReclamacoes: Number(row[reclamCol])||0,
+      respostas: Number(row[reclamCol+1])||0,
+      avaliacoes: Number(row[reclamCol+2])||0,
+      resolvidas: Number(row[reclamCol+3])||0,
+      naoResolvidas: Number(row[reclamCol+4])||0,
+      voltaria: Number(row[reclamCol+5])||0,
+      naoVoltaria: Number(row[reclamCol+6])||0,
+    };
+    list.push({mm, ano, key});
+    meses[key] = agg;
+  }
+  return {list, meses};
+}
+
+// aba "índices-por-mês": nota final e índices de reputação (mês sem ano -> alinhado pela "em quantidade")
+function agregarIndices(ws, emQtdList){
+  const rows = sheetToMatrix(ws);
+  const headerIdx = rows.findIndex(r=>r.some(c=>typeof c==='string' && c.toLowerCase().includes('nota final')));
+  if(headerIdx<0) return {};
+  const header = rows[headerIdx];
+  let mesCol = header.findIndex(c=>typeof c==='string' && c.toLowerCase().trim()==='mês');
+  if(mesCol<0) mesCol = 0;
+  const notaFinalCol = mesCol+1, indRespCol = mesCol+2, indVoltCol = mesCol+3, indSolCol = mesCol+4, notaCol = mesCol+5;
+
+  const linhas = [];
+  for(let r=headerIdx+1; r<rows.length; r++){
+    const row = rows[r];
+    if(!row || typeof row[mesCol] !== 'string') break;
+    const mmIdx = MESES_COMPLETOS.indexOf(row[mesCol].trim().toLowerCase());
+    if(mmIdx<0) break;
+    linhas.push({
+      mm: mmIdx+1,
+      notaFinalRA: Number(row[notaFinalCol]),
+      indiceResposta: Number(row[indRespCol]),
+      indiceVoltaria: Number(row[indVoltCol]),
+      indiceSolucao: Number(row[indSolCol]),
+      nota: Number(row[notaCol]),
+    });
+  }
+  if(linhas.length===0 || emQtdList.length===0) return {};
+
+  // ancora: ano do último mês de índices = ano do último mês IGUAL na lista de "em quantidade"
+  const ultimo = linhas[linhas.length-1];
+  let anoAncora = null;
+  for(let i=emQtdList.length-1;i>=0;i--){
+    if(emQtdList[i].mm === ultimo.mm){ anoAncora = emQtdList[i].ano; break; }
+  }
+  if(anoAncora===null) return {}; // não deu pra alinhar automaticamente
+
+  const totalAncora = anoAncora*12 + ultimo.mm;
+  const meses = {};
+  linhas.forEach((linha, i)=>{
+    const totalLinha = totalAncora - (linhas.length-1-i);
+    const ano = Math.floor((totalLinha-1)/12);
+    const mm = ((totalLinha-1)%12)+1;
+    const key = `${ano}-${String(mm).padStart(2,'0')}`;
+    meses[key] = {
+      notaFinalRA: linha.notaFinalRA,
+      indiceResposta: linha.indiceResposta,
+      indiceVoltaria: linha.indiceVoltaria,
+      indiceSolucao: linha.indiceSolucao,
+      nota: linha.nota,
+    };
+  });
+  return meses;
+}
+
+function acharAba(wb, termo){
+  return wb.SheetNames.find(n=>n.trim().toLowerCase().includes(termo));
+}
+
+/* ===================== SALVAR NO FIRESTORE ===================== */
+async function handleUpload(){
+  const msgEl = document.getElementById('modalMsg');
+  msgEl.className = 'msg'; msgEl.textContent='';
+
+  const senha = document.getElementById('senhaInput').value;
+  if(senha !== ADMIN_PASSPHRASE){
+    msgEl.textContent = 'Senha incorreta.'; msgEl.className='msg err show'; return;
+  }
+
+  const file = document.getElementById('fileInput').files[0];
+  if(!file){
+    msgEl.textContent = 'Selecione o arquivo da planilha.'; msgEl.className='msg err show'; return;
+  }
+
+  const btn = document.getElementById('btnSalvar');
+  btn.disabled = true; btn.textContent = 'Salvando…';
+
+  try{
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data, {type:'array', cellDates:true});
+
+    const nomeBase = acharAba(wb, 'base');
+    const nomeQtd = acharAba(wb, 'quantidade');
+    const nomeIndices = acharAba(wb, 'ndice'); // pega "índices" mesmo sem acento
+
+    let doresPorMes = {};
+    let emQtd = {list:[], meses:{}};
+    let indicesPorMes = {};
+    const avisos = [];
+
+    if(nomeQtd){
+      emQtd = agregarEmQuantidade(wb.Sheets[nomeQtd]);
+      if(emQtd.list.length===0) avisos.push('não encontrei a coluna "Reclamações" na aba de quantidade.');
+    } else { avisos.push('não encontrei a aba "em quantidade".'); }
+
+    if(nomeBase){
+      const baseRows = XLSX.utils.sheet_to_json(wb.Sheets[nomeBase], {defval:null});
+      if(baseRows.length===0) avisos.push('a aba "base" está vazia.');
+      doresPorMes = agregarBase(baseRows);
+    } else { avisos.push('não encontrei a aba "base".'); }
+
+    if(nomeIndices){
+      indicesPorMes = agregarIndices(wb.Sheets[nomeIndices], emQtd.list);
+      if(Object.keys(indicesPorMes).length===0) avisos.push('não consegui alinhar os meses da aba de índices (confira se a aba "em quantidade" tem pelo menos um mês em comum).');
+    } else { avisos.push('não encontrei a aba "índices-por-mês".'); }
+
+    const todosOsMeses = new Set([
+      ...Object.keys(emQtd.meses),
+      ...Object.keys(doresPorMes),
+      ...Object.keys(indicesPorMes)
+    ]);
+
+    if(todosOsMeses.size===0){
+      throw new Error('Não consegui identificar nenhum mês nas abas enviadas. Confira se a planilha tem as abas e colunas certas.');
+    }
+
+    const temas = [];
+    for(let i=1;i<=6;i++){
+      const titulo = document.getElementById(`temaTitulo${i}`).value.trim();
+      const texto = document.getElementById(`temaTexto${i}`).value.trim();
+      if(titulo && texto) temas.push({titulo, texto});
+    }
+    // temas se aplicam ao mês mais recente identificado no upload
+    const mesesOrdenados = [...todosOsMeses].sort();
+    const mesMaisRecente = mesesOrdenados[mesesOrdenados.length-1];
+
+    for(const mesKey of todosOsMeses){
+      const payload = { mes: mesKey, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp() };
+      if(emQtd.meses[mesKey]) Object.assign(payload, emQtd.meses[mesKey]);
+      if(doresPorMes[mesKey]) Object.assign(payload, doresPorMes[mesKey]);
+      if(indicesPorMes[mesKey]) Object.assign(payload, indicesPorMes[mesKey]);
+      if(temas.length && mesKey===mesMaisRecente) payload.temas = temas;
+      await db.collection(COLLECTION).doc(mesKey).set(payload, {merge:true});
+    }
+
+    let msg = `Salvo! ${todosOsMeses.size} mês(es) atualizado(s) (${mesesOrdenados.map(mesKeyToLabel).join(', ')}).`;
+    if(avisos.length) msg += ' Avisos: ' + avisos.join(' ');
+    msgEl.textContent = msg; msgEl.className='msg ok show';
+    await loadDashboard();
+    setTimeout(closeModal, 2200);
+
+  }catch(err){
+    console.error(err);
+    msgEl.textContent = 'Erro: ' + err.message; msgEl.className='msg err show';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Salvar';
+  }
+}
+
+/* ===================== CARREGAR E RENDERIZAR ===================== */
+let chartNotaInstance, chartVolumeInstance, chartMacroInstance;
+
+async function loadDashboard(){
+  hideBanner();
+  let snap;
+  try{
+    snap = await db.collection(COLLECTION).orderBy('mes','asc').get();
+  }catch(err){
+    showBanner('Não consegui conectar ao banco de dados. Confira se o firebaseConfig foi preenchido corretamente. Detalhe: ' + err.message, 'error');
+    return;
+  }
+
+  if(snap.empty){
+    showBanner('Nenhum dado cadastrado ainda. Clique em "Atualizar dados do mês" para subir a primeira base.', 'info');
+    return;
+  }
+
+  const meses = snap.docs.map(d=>d.data());
+
+  const mesesComVolume = meses.filter(m=>m.totalReclamacoes!==undefined);
+  const mesesComIndice = meses.filter(m=>m.notaFinalRA!==undefined && m.notaFinalRA!==null);
+  const ultimoVolume = mesesComVolume[mesesComVolume.length-1];
+  const penultimoVolume = mesesComVolume[mesesComVolume.length-2];
+  const ultimoIndice = mesesComIndice[mesesComIndice.length-1];
+  const penultimoIndice = mesesComIndice[mesesComIndice.length-2];
+
+  const totalGeral = mesesComVolume.reduce((s,m)=>s+(m.totalReclamacoes||0),0);
+  document.getElementById('metaRow').innerHTML = `
+    <div class="tag">Índice RA (reputação): <b>${ultimoIndice?mesKeyToLabel(ultimoIndice.mes):'—'}</b> — mês mais recente com índice</div>
+    <div class="tag">Volume e categorização: <b>${ultimoVolume?mesKeyToLabel(ultimoVolume.mes):'—'}</b> — mês mais recente</div>
+    <div class="tag">${fmtNum(totalGeral)} reclamações analisadas no total</div>
+  `;
+
+  if(ultimoIndice){
+    document.getElementById('kpiNota').textContent = fmtNota(ultimoIndice.notaFinalRA);
+    document.getElementById('kpiNotaNote').textContent = `Reputação consolidada · ${mesKeyToLabel(ultimoIndice.mes)}`;
+    if(penultimoIndice){
+      const diff = ultimoIndice.notaFinalRA - penultimoIndice.notaFinalRA;
+      const el = document.getElementById('kpiNotaDelta');
+      el.textContent = `${diff>=0?'▲':'▼'} ${Math.abs(diff).toFixed(2).replace('.',',')} vs ${mesKeyToLabel(penultimoIndice.mes)} (${fmtNota(penultimoIndice.notaFinalRA)})`;
+      el.className = 'kpi-delta ' + (diff>0?'delta-up':diff<0?'delta-down':'delta-flat');
+    }
+  }
+  if(ultimoVolume){
+    document.getElementById('kpiReclamacoes').textContent = fmtNum(ultimoVolume.totalReclamacoes);
+    document.getElementById('kpiReclamacoesNote').textContent = mesKeyToLabel(ultimoVolume.mes);
+    const pctResolvidas = ultimoVolume.avaliacoes ? (ultimoVolume.resolvidas/ultimoVolume.avaliacoes*100) : null;
+    const pctVoltaria = (ultimoVolume.voltaria+ultimoVolume.naoVoltaria) ? (ultimoVolume.voltaria/(ultimoVolume.voltaria+ultimoVolume.naoVoltaria)*100) : null;
+    document.getElementById('kpiResolvidas').textContent = fmtPct(pctResolvidas);
+    document.getElementById('kpiResolvidasNote').textContent = `sobre ${fmtNum(ultimoVolume.avaliacoes)} avaliações · ${mesKeyToLabel(ultimoVolume.mes)}`;
+    document.getElementById('kpiVoltaria').textContent = fmtPct(pctVoltaria);
+    document.getElementById('kpiVoltariaNote').textContent = `sobre avaliações · ${mesKeyToLabel(ultimoVolume.mes)}`;
+
+    if(penultimoVolume){
+      const diffRec = ultimoVolume.totalReclamacoes - penultimoVolume.totalReclamacoes;
+      const pctDiff = penultimoVolume.totalReclamacoes ? (diffRec/penultimoVolume.totalReclamacoes*100) : 0;
+      const el = document.getElementById('kpiReclamacoesDelta');
+      el.textContent = `${diffRec>=0?'▲':'▼'} ${Math.abs(pctDiff).toFixed(1)}% vs ${mesKeyToLabel(penultimoVolume.mes)} (${fmtNum(penultimoVolume.totalReclamacoes)})`;
+      el.className = 'kpi-delta ' + (diffRec>0?'delta-down':diffRec<0?'delta-up':'delta-flat');
+    }
+  }
+
+  const janelaIndice = mesesComIndice.slice(-JANELA_MESES);
+  const labelsNota = janelaIndice.map(m=>mesKeyToLabel(m.mes));
+  document.getElementById('tagNota').textContent = labelsNota.length ? `${labelsNota[0]} → ${labelsNota[labelsNota.length-1]} (últimos ${JANELA_MESES} meses)` : '—';
+  if(chartNotaInstance) chartNotaInstance.destroy();
+  chartNotaInstance = new Chart(document.getElementById('chartNota'), {
+    type:'line',
+    data:{ labels: labelsNota, datasets:[
+      {label:'IR (Índice de resposta)', data: janelaIndice.map(m=>m.indiceResposta), borderColor:'#CDBBFD', backgroundColor:'#CDBBFD', tension:0.3, borderWidth:2.5, pointRadius:3, yAxisID:'y'},
+      {label:'VFN (Índice de voltaria)', data: janelaIndice.map(m=>m.indiceVoltaria), borderColor:'#FA4C04', backgroundColor:'#FA4C04', tension:0.3, borderWidth:2.5, pointRadius:3, yAxisID:'y'},
+      {label:'IS (Índice de solução)', data: janelaIndice.map(m=>m.indiceSolucao), borderColor:'#08B25C', backgroundColor:'#08B25C', tension:0.3, borderWidth:2.5, pointRadius:3, yAxisID:'y'},
+      {label:'Nota', data: janelaIndice.map(m=>m.nota), borderColor:'#F1BF04', backgroundColor:'#F1BF04', tension:0.3, borderWidth:2.5, pointRadius:3, yAxisID:'y'},
+      {label:'Nota Final', data: janelaIndice.map(m=>m.notaFinalRA), borderColor:'#F7F4EC', backgroundColor:'#F7F4EC', tension:0.3, borderWidth:2.5, pointRadius:3, borderDash:[4,3], yAxisID:'y1'}
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom', labels:{boxWidth:10, font:{size:10.5}}}},
+      scales:{
+        y:{ position:'left', min:0, max:100, grid:{color:'rgba(255,255,255,0.06)'}, title:{display:true,text:'IR / VFN / IS / Nota (%)',color:'#CDBBFD',font:{size:10}} },
+        y1:{ position:'right', min:0, max:10, grid:{display:false}, title:{display:true,text:'Nota Final (0-10)',color:'#F7F4EC',font:{size:10}} },
+        x:{ grid:{display:false} }
+      }
+    }
+  });
+
+  const labelsVol = mesesComVolume.slice(-JANELA_MESES).map(m=>mesKeyToLabel(m.mes));
+  document.getElementById('tagVolume').textContent = labelsVol.length ? `${labelsVol[0]} → ${labelsVol[labelsVol.length-1]} (últimos ${JANELA_MESES} meses)` : '—';
+  if(chartVolumeInstance) chartVolumeInstance.destroy();
+  chartVolumeInstance = new Chart(document.getElementById('chartVolume'), {
+    type:'bar',
+    data:{ labels: labelsVol, datasets:[
+      {label:'Reclamações', data: mesesComVolume.slice(-JANELA_MESES).map(m=>m.totalReclamacoes), backgroundColor:'rgba(205,187,253,0.35)', borderRadius:3},
+      {label:'Avaliadas', data: mesesComVolume.slice(-JANELA_MESES).map(m=>m.avaliacoes), type:'line', borderColor:'#08B25C', backgroundColor:'#08B25C', tension:0.35, borderWidth:2.5, pointRadius:3}
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:10, font:{size:11}}}},
+      scales:{ y:{grid:{color:'rgba(255,255,255,0.06)'}}, x:{grid:{display:false}} } }
+  });
+
+  if(ultimoVolume){
+    document.getElementById('tagMacro').textContent = `${mesKeyToLabel(ultimoVolume.mes)} · N=${fmtNum(ultimoVolume.totalReclamacoes)}`;
+    document.getElementById('tagDores').textContent = mesKeyToLabel(ultimoVolume.mes);
+
+    const macroEntries = Object.entries(ultimoVolume.macro||{}).sort((a,b)=>b[1]-a[1]);
+    if(chartMacroInstance) chartMacroInstance.destroy();
+    const palette = ['#FA4C04','#CDBBFD','#F1BF04','#08B25C','#8A4A85','#6B3B68','#D63C00','#9B85D9','#C77DFF','#5A2E56'];
+    chartMacroInstance = new Chart(document.getElementById('chartMacro'), {
+      type:'doughnut',
+      data:{ labels: macroEntries.map(e=>e[0]), datasets:[{
+        data: macroEntries.map(e=>e[1]), backgroundColor: palette, borderColor:'#440041', borderWidth:3
+      }]},
+      options:{ responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{position:'right', labels:{boxWidth:10, font:{size:10.5}, color:'#E9E0FF'}}} }
+    });
+
+    const doresEntries = Object.entries(ultimoVolume.dores||{}).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    const total = ultimoVolume.totalReclamacoes || 1;
+    const maxV = doresEntries.length ? doresEntries[0][1] : 1;
+    const rankList = document.getElementById('rankList');
+    rankList.innerHTML = '';
+    doresEntries.forEach((d,i)=>{
+      const pct = d[1]/total*100;
+      const item = document.createElement('div');
+      item.className='rank-item';
+      item.innerHTML = `
+        <div class="rank-num">${String(i+1).padStart(2,'0')}</div>
+        <div>
+          <div class="rank-label">${d[0]}</div>
+          <div class="rank-bar-track"><div class="rank-bar-fill" style="width:${(d[1]/maxV*100).toFixed(0)}%"></div></div>
+        </div>
+        <div class="rank-pct">${pct.toFixed(1)}%</div>
+      `;
+      rankList.appendChild(item);
+    });
+
+    document.getElementById('tagTemas').textContent = `POR DOR · ${mesKeyToLabel(ultimoVolume.mes)}`;
+    const themeGrid = document.getElementById('themeGrid');
+    if(ultimoVolume.temas && ultimoVolume.temas.length){
+      // se alguém escreveu uma leitura manual, ela tem prioridade
+      themeGrid.innerHTML = ultimoVolume.temas.map((t,i)=>`
+        <div class="theme-card">
+          <div class="stamp">Tema ${i+1}</div>
+          <h3>${t.titulo}</h3>
+          <p>${t.texto}</p>
+        </div>
+      `).join('');
+    } else {
+      const semCategoria = doresEntries.find(d=>d[0]==='Não categorizado');
+      const doresValidas = doresEntries.filter(d=>d[0]!=='Não categorizado').slice(0,5);
+      const cards = doresValidas.map((d,i)=>{
+        const pct = (d[1]/total*100).toFixed(1);
+        return `
+          <div class="theme-card">
+            <div class="stamp">Nº ${i+1} · ${pct}% do mês</div>
+            <h3>${d[0]}</h3>
+            <p>${fmtNum(d[1])} reclamações do mês trazem esse motivo. Vale revisar os casos mais recentes desta categoria para identificar causa raiz e possíveis ações de mitigação.</p>
+          </div>`;
+      }).join('');
+      const cardNaoCat = semCategoria ? `
+          <div class="theme-card">
+            <div class="stamp">Atenção · ${(semCategoria[1]/total*100).toFixed(1)}% do mês</div>
+            <h3>Ainda sem categorização (Dor em branco)</h3>
+            <p>${fmtNum(semCategoria[1])} reclamações deste mês estão sem "Dor" preenchida na base — isso mascara o tamanho real de cada tema acima. Recomendado priorizar essa categorização antes da próxima reunião.</p>
+          </div>` : '';
+      themeGrid.innerHTML = cards + cardNaoCat || '<div class="empty-note">Sem dados de categorização suficientes neste mês.</div>';
+    }
+  }
+
+  const naoCategorizadoPct = ultimoVolume && ultimoVolume.macro && ultimoVolume.macro['Não categorizado']
+    ? (ultimoVolume.macro['Não categorizado']/ultimoVolume.totalReclamacoes*100) : null;
+  document.getElementById('notesBox').innerHTML = `
+    <b>1.</b> "Nota Final RA" e os índices de reputação são inseridos manualmente (o RA não disponibiliza isso na exportação de reclamações) — confira se o mês está atualizado no painel de atualização.<br>
+    <b>2.</b> Meses recém-enviados podem estar "em andamento" (poucas avaliações ainda) — % Resolvidas e % Voltaria tendem a mudar até o fechamento do mês.<br>
+    ${naoCategorizadoPct ? `<b>3.</b> ${naoCategorizadoPct.toFixed(1).replace('.',',')}% das reclamações do mês mais recente ainda estão sem "Dor" preenchida na base — isso mascara o tamanho real de cada tema. Recomendado revisar a categorização antes da reunião.<br>` : ''}
+    <b>4.</b> Os dados ficam salvos no banco (Firestore) assim que alguém sobe a base — qualquer pessoa que abrir este link já vê a versão mais recente, sem precisar subir de novo.
+  `;
+}
+
+loadDashboard();
+</script>
+
+</body>
+</html>
